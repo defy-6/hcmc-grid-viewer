@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HCMC Grid Cluster & Congestion Viewer</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <style>
+    :root {
+      --bg: #f3f4f6;
+      --panel: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1.8fr 1fr;
+      gap: 16px;
+      padding: 16px;
+      min-height: 100vh;
+    }
+
+    .panel {
+      background: var(--panel);
+      border-radius: 16px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+      overflow: hidden;
+    }
+
+    .section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section:last-child {
+      border-bottom: none;
+    }
+
+    h1, h2, h3, p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+
+    h2 {
+      font-size: 18px;
+      margin-bottom: 12px;
+    }
+
+    .subtext {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    #map {
+      width: 100%;
+      height: calc(100vh - 140px);
+      min-height: 600px;
+    }
+
+    .detail-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .value {
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
+    .value.small {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .congestion-item {
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      border: 1px solid #eef2f7;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .legend-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid rgba(0,0,0,0.15);
+      flex-shrink: 0;
+    }
+
+    .status {
+      padding: 12px;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .error {
+      color: #b91c1c;
+      background: #fef2f2;
+      border-color: #fecaca;
+    }
+
+    @media (max-width: 960px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      #map {
+        height: 60vh;
+        min-height: 420px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <div class="panel">
+      <div class="section">
+        <h1>HCMC Grid Cluster & Congestion Viewer</h1>
+        <p class="subtext">
+          Click a grid to view its cluster name, dominant land use, and all congestion types by time period.
+        </p>
+        <p class="subtext" style="margin-top:8px;">
+          Expected files in the same GitHub folder as this HTML file:<br>
+          <strong>grid_500m_daytype_3hour_top1_3_with_congestion_reason.geojson</strong><br>
+          <strong>HCMC_grid_500_with_landuse_ratio_combined_with_latest_kmeans.geojson</strong>
+        </p>
+      </div>
+      <div id="map"></div>
+    </div>
+
+    <div class="panel">
+      <div class="section">
+        <h2>Grid Details</h2>
+        <div id="status" class="status">Loading GeoJSON files...</div>
+      </div>
+
+      <div class="section" id="details">
+        <div class="status">Click a grid on the map to inspect its details.</div>
+      </div>
+
+      <div class="section">
+        <h2>Cluster Legend</h2>
+        <div id="legend"></div>
+      </div>
+    </div>
+  </div>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script>
+    const CLUSTER_NAME_MAP = {
+      0: "Walkable Low-Density Areas",
+      1: "Low-Activity Peripheral Areas",
+      2: "Motorcycle-Dependent Transitional Areas",
+      3: "High-Accessibility Urban Core Areas",
+      4: "Hyper-Dense Underserved Areas"
+    };
+
+    const CLUSTER_COLOR_MAP = {
+      0: "#4caf50",
+      1: "#1e88e5",
+      2: "#fb8c00",
+      3: "#e53935",
+      4: "#8e24aa"
+    };
+
+    const FILES = {
+      congestion: "grid_500m_daytype_3hour_top1_3_with_congestion_reason.geojson",
+      landuse: "HCMC_grid_500_with_landuse_ratio_combined_with_latest_kmeans.geojson"
+    };
+
+    const map = L.map("map").setView([10.78, 106.69], 11);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    const statusEl = document.getElementById("status");
+    const detailsEl = document.getElementById("details");
+    const legendEl = document.getElementById("legend");
+
+    let geoJsonLayer = null;
+
+    function setStatus(message, isError = false) {
+      statusEl.textContent = message;
+      statusEl.className = isError ? "status error" : "status";
+    }
+
+    function normalizeLanduseName(value) {
+      if (!value) return "N/A";
+      const mapping = {
+        education: "Education",
+        green: "Green",
+        industrial: "Industrial",
+        infrastructure: "Infrastructure",
+        mix_use: "Mixed Use",
+        others: "Others",
+        public_use: "Public Use",
+        residential: "Residential",
+        transportation: "Transportation",
+        water: "Water"
+      };
+      return mapping[value] || value;
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function toMinutes(timeStr) {
+      if (!timeStr || typeof timeStr !== "string") return Number.MAX_SAFE_INTEGER;
+      const [h, m] = timeStr.split(":").map(Number);
+      if (Number.isNaN(h) || Number.isNaN(m)) return Number.MAX_SAFE_INTEGER;
+      return h * 60 + m;
+    }
+
+    function renderLegend() {
+      legendEl.innerHTML = Object.entries(CLUSTER_NAME_MAP)
+        .map(([code, name]) => `
+          <div class="legend-item">
+            <span class="legend-swatch" style="background:${CLUSTER_COLOR_MAP[code]}"></span>
+            <span>${code}: ${name}</span>
+          </div>
+        `)
+        .join("");
+    }
+
+    function renderDetails(props) {
+      const records = Array.isArray(props.congestion_records) ? props.congestion_records : [];
+      const congestionHtml = records.length
+        ? records.map(item => `
+            <div class="congestion-item">
+              <div class="label">Time Period</div>
+              <div class="value">${escapeHtml(item.time_3hour_str || "Unknown")}</div>
+              <div class="label" style="margin-top:10px;">Congestion Type</div>
+              <div class="value small">${escapeHtml(item.congestion_type || "Unknown")}</div>
+            </div>
+          `).join("")
+        : `<div class="status">No congestion record found for this grid.</div>`;
+
+      detailsEl.innerHTML = `
+        <div class="detail-card">
+          <div class="label">Grid ID</div>
+          <div class="value">${escapeHtml(props.id || "N/A")}</div>
+        </div>
+        <div class="detail-card">
+          <div class="label">Cluster Name</div>
+          <div class="value">${escapeHtml(props.cluster_name || "N/A")}</div>
+          <div class="value small" style="margin-top:6px;">Cluster Code: ${escapeHtml(props.cluster_30min ?? "N/A")}</div>
+        </div>
+        <div class="detail-card">
+          <div class="label">Dominant Land Use</div>
+          <div class="value">${escapeHtml(normalizeLanduseName(props.dominant_lu))}</div>
+        </div>
+        <div class="detail-card">
+          <div class="label">Congestion by Time Period</div>
+          <div style="margin-top:10px;">${congestionHtml}</div>
+        </div>
+      `;
+    }
+
+    function buildMergedGeoJSON(congestionGeoJSON, landuseGeoJSON) {
+      const landuseById = new Map();
+      const congestionById = new Map();
+
+      for (const feature of landuseGeoJSON.features || []) {
+        const props = feature.properties || {};
+        const id = String(props.id);
+        if (!id) continue;
+        landuseById.set(id, {
+          cluster_30min: props.cluster_30min,
+          cluster_name: CLUSTER_NAME_MAP[props.cluster_30min] || `Cluster ${props.cluster_30min}`,
+          dominant_lu: props.dominant_lu || "N/A",
+          geometry: feature.geometry
+        });
+      }
+
+      for (const feature of congestionGeoJSON.features || []) {
+        const props = feature.properties || {};
+        const id = String(props.id);
+        if (!id) continue;
+        if (!congestionById.has(id)) congestionById.set(id, []);
+        congestionById.get(id).push({
+          time_3hour_str: props.time_3hour_str || "Unknown",
+          congestion_type: props.congestion_type || "Unknown"
+        });
+      }
+
+      const mergedFeatures = [];
+
+      for (const [id, landuseInfo] of landuseById.entries()) {
+        const congestionRecords = (congestionById.get(id) || []).sort(
+          (a, b) => toMinutes(a.time_3hour_str) - toMinutes(b.time_3hour_str)
+        );
+
+        mergedFeatures.push({
+          type: "Feature",
+          geometry: landuseInfo.geometry,
+          properties: {
+            id,
+            cluster_30min: landuseInfo.cluster_30min,
+            cluster_name: landuseInfo.cluster_name,
+            dominant_lu: landuseInfo.dominant_lu,
+            congestion_records: congestionRecords
+          }
+        });
+      }
+
+      return {
+        type: "FeatureCollection",
+        features: mergedFeatures
+      };
+    }
+
+    function getFeatureStyle(feature) {
+      const clusterCode = feature.properties.cluster_30min;
+      return {
+        color: "#666",
+        weight: 0.6,
+        fillColor: CLUSTER_COLOR_MAP[clusterCode] || "#bdbdbd",
+        fillOpacity: 0.72
+      };
+    }
+
+    async function loadData() {
+      try {
+        const [congestionRes, landuseRes] = await Promise.all([
+          fetch(FILES.congestion),
+          fetch(FILES.landuse)
+        ]);
+
+        if (!congestionRes.ok) {
+          throw new Error(`Failed to load ${FILES.congestion}`);
+        }
+        if (!landuseRes.ok) {
+          throw new Error(`Failed to load ${FILES.landuse}`);
+        }
+
+        const congestionGeoJSON = await congestionRes.json();
+        const landuseGeoJSON = await landuseRes.json();
+        const mergedGeoJSON = buildMergedGeoJSON(congestionGeoJSON, landuseGeoJSON);
+
+        if (geoJsonLayer) {
+          map.removeLayer(geoJsonLayer);
+        }
+
+        geoJsonLayer = L.geoJSON(mergedGeoJSON, {
+          style: getFeatureStyle,
+          onEachFeature: (feature, layer) => {
+            const props = feature.properties;
+            layer.bindTooltip(
+              `ID: ${escapeHtml(props.id)}<br>${escapeHtml(props.cluster_name)}<br>${escapeHtml(normalizeLanduseName(props.dominant_lu))}`
+            );
+
+            layer.on({
+              click: () => renderDetails(props),
+              mouseover: (e) => {
+                e.target.setStyle({ weight: 1.5, color: "#111", fillOpacity: 0.9 });
+                e.target.bringToFront();
+              },
+              mouseout: (e) => {
+                geoJsonLayer.resetStyle(e.target);
+              }
+            });
+          }
+        }).addTo(map);
+
+        const bounds = geoJsonLayer.getBounds();
+        if (bounds.isValid()) {
+          map.fitBounds(bounds.pad(0.03));
+        }
+
+        setStatus(`Loaded ${mergedGeoJSON.features.length} grids.`);
+      } catch (error) {
+        console.error(error);
+        setStatus(
+          `${error.message}. Make sure the two GeoJSON files are in the same GitHub folder as this HTML file.`,
+          true
+        );
+      }
+    }
+
+    renderLegend();
+    loadData();
+  </script>
+</body>
+</html>
