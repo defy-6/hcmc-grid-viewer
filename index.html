@@ -18,16 +18,13 @@
       --muted: #6b7280;
       --border: #e5e7eb;
     }
-
     * { box-sizing: border-box; }
-
     body {
       margin: 0;
       font-family: Arial, Helvetica, sans-serif;
       color: var(--text);
       background: var(--bg);
     }
-
     .layout {
       display: grid;
       grid-template-columns: 1.8fr 1fr;
@@ -35,56 +32,36 @@
       padding: 16px;
       min-height: 100vh;
     }
-
     .panel {
       background: var(--panel);
       border-radius: 16px;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
       overflow: hidden;
     }
-
     .section {
       padding: 16px;
       border-bottom: 1px solid var(--border);
     }
-
-    .section:last-child {
-      border-bottom: none;
-    }
-
-    h1, h2, h3, p {
-      margin: 0;
-    }
-
-    h1 {
-      font-size: 24px;
-      margin-bottom: 8px;
-    }
-
-    h2 {
-      font-size: 18px;
-      margin-bottom: 12px;
-    }
-
+    .section:last-child { border-bottom: none; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    h2 { font-size: 18px; margin-bottom: 12px; }
     .subtext {
       color: var(--muted);
       font-size: 14px;
       line-height: 1.5;
     }
-
     #map {
       width: 100%;
       height: calc(100vh - 140px);
       min-height: 600px;
     }
-
     .detail-card {
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 12px;
       margin-bottom: 12px;
     }
-
     .label {
       font-size: 12px;
       text-transform: uppercase;
@@ -92,19 +69,16 @@
       color: var(--muted);
       margin-bottom: 6px;
     }
-
     .value {
       font-size: 16px;
       font-weight: 600;
       line-height: 1.4;
     }
-
     .value.small {
       font-size: 14px;
       font-weight: 500;
       color: var(--muted);
     }
-
     .congestion-item {
       background: #f8fafc;
       border-radius: 10px;
@@ -112,7 +86,6 @@
       margin-bottom: 8px;
       border: 1px solid #eef2f7;
     }
-
     .legend-item {
       display: flex;
       align-items: center;
@@ -120,7 +93,6 @@
       margin-bottom: 8px;
       font-size: 14px;
     }
-
     .legend-swatch {
       width: 14px;
       height: 14px;
@@ -128,7 +100,6 @@
       border: 1px solid rgba(0,0,0,0.15);
       flex-shrink: 0;
     }
-
     .status {
       padding: 12px;
       background: #f8fafc;
@@ -137,18 +108,13 @@
       font-size: 14px;
       color: var(--muted);
     }
-
     .error {
       color: #b91c1c;
       background: #fef2f2;
       border-color: #fecaca;
     }
-
     @media (max-width: 960px) {
-      .layout {
-        grid-template-columns: 1fr;
-      }
-
+      .layout { grid-template-columns: 1fr; }
       #map {
         height: 60vh;
         min-height: 420px;
@@ -162,12 +128,7 @@
       <div class="section">
         <h1>HCMC Grid Cluster & Congestion Viewer</h1>
         <p class="subtext">
-          Click a grid to view its cluster name, dominant land use, and all congestion types by time period.
-        </p>
-        <p class="subtext" style="margin-top:8px;">
-          Expected files in the same GitHub folder as this HTML file:<br>
-          <strong>grid_500m_daytype_3hour_top1_3_with_congestion_reason.geojson</strong><br>
-          <strong>HCMC_grid_500_with_landuse_ratio_combined_with_latest_kmeans.geojson</strong>
+          Click a grid to view its cluster name, dominant land use, diagnosis, strategy recommendation, and congestion records by day type and time period.
         </p>
       </div>
       <div id="map"></div>
@@ -218,7 +179,6 @@
     };
 
     const map = L.map("map").setView([10.78, 106.69], 11);
-
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
@@ -226,7 +186,6 @@
     const statusEl = document.getElementById("status");
     const detailsEl = document.getElementById("details");
     const legendEl = document.getElementById("legend");
-
     let geoJsonLayer = null;
 
     function setStatus(message, isError = false) {
@@ -256,7 +215,7 @@
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/\"/g, "&quot;")
+        .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
     }
 
@@ -278,261 +237,30 @@
         .join("");
     }
 
-    function renderDetails(props) {
-      const records = Array.isArray(props.congestion_records) ? props.congestion_records : [];
-      const congestionHtml = records.length
-        ? records.map(item => `
-            <div class="congestion-item">
-              <div class="label">Day Type</div>
-              <div class="value">${escapeHtml(item.day_type || "Unknown")}</div>
-              <div class="label" style="margin-top:10px;">Time Period</div>
-              <div class="value">${escapeHtml(item.time_3hour_str || "Unknown")}</div>
-              <div class="label" style="margin-top:10px;">Congestion Type</div>
-              <div class="value small">${escapeHtml(item.congestion_type || "Unknown")}</div>
-            </div>
-          `).join("")
-        : `<div class="status">No congestion record found for this grid.</div>`;
-
-      detailsEl.innerHTML = `
-        <div class="detail-card">
-          <div class="label">Grid ID</div>
-          <div class="value">${escapeHtml(props.id || "N/A")}</div>
-        </div>
-        <div class="detail-card">
-          <div class="label">Cluster Name</div>
-          <div class="value">${escapeHtml(props.cluster_name || "N/A")}</div>
-          <div class="value small" style="margin-top:6px;">Cluster Code: ${escapeHtml(props.cluster_30min ?? "N/A")}</div>
-        </div>
-        <div class="detail-card">
-          <div class="label">Dominant Land Use</div>
-          <div class="value">${escapeHtml(normalizeLanduseName(props.dominant_lu))}</div>
-        </div>
-        <div class="detail-card">
-          <div class="label">Congestion by Time Period</div>
-          <div style="margin-top:10px;">${congestionHtml}</div>
-        </div>
-      `;
-    }
-
-    function buildMergedGeoJSON(congestionGeoJSON, landuseGeoJSON) {
-      const landuseById = new Map();
-      const congestionById = new Map();
-
-      for (const feature of landuseGeoJSON.features || []) {
-        const props = feature.properties || {};
-        const id = String(props.id);
-        if (!id) continue;
-        landuseById.set(id, {
-          cluster_30min: props.cluster_30min,
-          cluster_name: CLUSTER_NAME_MAP[props.cluster_30min] || `Cluster ${props.cluster_30min}`,
-          dominant_lu: props.dominant_lu || "N/A",
-          geometry: feature.geometry
-        });
-      }
-
-      for (const feature of congestionGeoJSON.features || []) {
-        const props = feature.properties || {};
-        const id = String(props.id);
-        if (!id) continue;
-        if (!congestionById.has(id)) congestionById.set(id, []);
-        congestionById.get(id).push({
-          time_3hour_str: props.time_3hour_str || "Unknown",
-          congestion_type: props.congestion_type || "Unknown",
-          day_type: props.day_type || "Unknown",
-          day_type: props.day_type || "Unknown"
-        });
-      }
-
-      const mergedFeatures = [];
-
-      for (const [id, landuseInfo] of landuseById.entries()) {
-        const congestionRecords = (congestionById.get(id) || []).sort(
-          (a, b) => toMinutes(a.time_3hour_str) - toMinutes(b.time_3hour_str)
-        );
-
-        mergedFeatures.push({
-          type: "Feature",
-          geometry: landuseInfo.geometry,
-          properties: {
-            id,
-            cluster_30min: landuseInfo.cluster_30min,
-            cluster_name: landuseInfo.cluster_name,
-            dominant_lu: landuseInfo.dominant_lu,
-            congestion_records: congestionRecords
-          }
-        });
-      }
-
-      return {
-        type: "FeatureCollection",
-        features: mergedFeatures
-      };
-    }
-
-    function getFeatureStyle(feature) {
-      const clusterCode = feature.properties.cluster_30min;
-      return {
-        color: "#666",
-        weight: 0.6,
-        fillColor: CLUSTER_COLOR_MAP[clusterCode] || "#bdbdbd",
-        fillOpacity: 0.72
-      };
-    }
-
-    async function loadData() {
-      try {
-        const [congestionRes, landuseRes] = await Promise.all([
-          fetch(FILES.congestion),
-          fetch(FILES.landuse)
-        ]);
-
-        if (!congestionRes.ok) {
-          throw new Error(`Failed to load ${FILES.congestion}`);
-        }
-        if (!landuseRes.ok) {
-          throw new Error(`Failed to load ${FILES.landuse}`);
-        }
-
-        const congestionGeoJSON = await congestionRes.json();
-        const landuseGeoJSON = await landuseRes.json();
-        const mergedGeoJSON = buildMergedGeoJSON(congestionGeoJSON, landuseGeoJSON);
-
-        if (geoJsonLayer) {
-          map.removeLayer(geoJsonLayer);
-        }
-
-        geoJsonLayer = L.geoJSON(mergedGeoJSON, {
-          style: getFeatureStyle,
-          onEachFeature: (feature, layer) => {
-            const props = feature.properties;
-            layer.bindTooltip(
-              `ID: ${escapeHtml(props.id)}<br>${escapeHtml(props.cluster_name)}<br>${escapeHtml(normalizeLanduseName(props.dominant_lu))}`
-            );
-
-            layer.on({
-              click: () => renderDetails(props),
-              mouseover: (e) => {
-                e.target.setStyle({ weight: 1.5, color: "#111", fillOpacity: 0.9 });
-                e.target.bringToFront();
-              },
-              mouseout: (e) => {
-                geoJsonLayer.resetStyle(e.target);
-              }
-            });
-          }
-        }).addTo(map);
-
-        const bounds = geoJsonLayer.getBounds();
-        if (bounds.isValid()) {
-          map.fitBounds(bounds.pad(0.03));
-        }
-
-        setStatus(`Loaded ${mergedGeoJSON.features.length} grids.`);
-      } catch (error) {
-        console.error(error);
-        setStatus(
-          `${error.message}. Make sure the two GeoJSON files are in the same GitHub folder as this HTML file.`,
-          true
-        );
-      }
-    }
-
-    renderLegend();
-    loadData();
-      const STRATEGY_LIBRARY = {
-      bus_metro_operation: {
-        family_name: "Bus / Metro Operation",
-        items: [
-          "Increase service frequency",
-          "Bus priority infrastructure",
-          "Dynamic bus/metro dispatch",
-          "Bus–Metro coordination"
-        ]
-      },
-      walkability_station_access: {
-        family_name: "Walkability and Station Access",
-        items: [
-          "Pedestrian street improvement",
-          "Safe street crossings",
-          "Station-area pedestrian design",
-          "Accessibility improvements"
-        ]
-      },
-      first_last_mile: {
-        family_name: "First / Last Mile Connection",
-        items: [
-          "Shared electric motorcycles",
-          "Micro-mobility hubs",
-          "Electrification of mobility",
-          "Integrated mobility systems"
-        ]
-      },
-      traffic_management: {
-        family_name: "Traffic Management",
-        items: [
-          "One-way street systems",
-          "Motorcycle lane organization",
-          "Intersection management",
-          "Real-time monitoring & control"
-        ]
-      }
-    };
-
     function summarizeCongestion(records) {
       const summary = {
         reasons: new Set(),
-        peakTimes: [],
         allTimes: [],
         dayTypes: new Set()
       };
 
       records.forEach(record => {
-        const reason = record.congestion_type || "Unknown";
-        const time = record.time_3hour_str || "Unknown";
-        const day = record.day_type || "Unknown";
-        summary.reasons.add(reason);
-        summary.allTimes.push(time);
-        summary.dayTypes.add(day);
-        if (["5:00", "8:00", "17:00", "20:00"].includes(time)) {
-          summary.peakTimes.push(time);
-        }
+        summary.reasons.add(record.congestion_type || "Unknown");
+        summary.allTimes.push(record.time_3hour_str || "Unknown");
+        summary.dayTypes.add(record.day_type || "Unknown");
       });
 
       return {
         reasons: Array.from(summary.reasons),
-        peakTimes: Array.from(new Set(summary.peakTimes)).sort((a, b) => toMinutes(a) - toMinutes(b)),
         allTimes: Array.from(new Set(summary.allTimes)).sort((a, b) => toMinutes(a) - toMinutes(b)),
         dayTypes: Array.from(summary.dayTypes)
-      };
-    }
-      const summary = {
-        reasons: new Set(),
-        peakTimes: [],
-        allTimes: []
-      };
-
-      records.forEach(record => {
-        const reason = record.congestion_type || "Unknown";
-        const time = record.time_3hour_str || "Unknown";
-        summary.reasons.add(reason);
-        summary.allTimes.push(time);
-        if (["5:00", "8:00", "17:00", "20:00"].includes(time)) {
-          summary.peakTimes.push(time);
-        }
-      });
-
-      return {
-        reasons: Array.from(summary.reasons),
-        peakTimes: Array.from(new Set(summary.peakTimes)).sort((a, b) => toMinutes(a) - toMinutes(b)),
-        allTimes: Array.from(new Set(summary.allTimes)).sort((a, b) => toMinutes(a) - toMinutes(b))
       };
     }
 
     function scoreStrategies(props) {
       const clusterName = props.cluster_name || "";
       const landuse = props.dominant_lu || "";
-      const congestionRecords = props.congestion_records || [];
-      const congestionSummary = summarizeCongestion(congestionRecords);
+      const congestionSummary = summarizeCongestion(props.congestion_records || []);
       const reasons = congestionSummary.reasons;
 
       const scores = {
@@ -590,6 +318,7 @@
       const congestionSummary = summarizeCongestion(props.congestion_records || []);
       const reasons = congestionSummary.reasons;
       const times = congestionSummary.allTimes;
+      const days = congestionSummary.dayTypes;
 
       let diagnosis = "This grid shows a relatively mild mobility condition with no strong congestion pattern recorded.";
 
@@ -606,15 +335,18 @@
       }
 
       if (reasons.includes("severe mismatch")) {
-        diagnosis += " The presence of severe mismatch suggests that both demand pressure and supply limitations are occurring together.";
+        diagnosis += " Severe mismatch suggests that both demand pressure and supply limitations are occurring together.";
       } else if (reasons.includes("supply shortage")) {
-        diagnosis += " Recorded supply shortage suggests bottlenecks, limited capacity, or inefficient traffic organization.";
+        diagnosis += " Supply shortage suggests bottlenecks, limited capacity, or inefficient traffic organization.";
       } else if (reasons.includes("demand pressure")) {
         diagnosis += " Demand pressure indicates that congestion is strongly linked to high travel demand in this location.";
       }
 
+      if (days.length) {
+        diagnosis += ` Recorded day types: ${days.join(", ")}.`;
+      }
       if (times.length) {
-        diagnosis += ` Congestion has been recorded in these time periods: ${times.join(", ")}.`;
+        diagnosis += ` Recorded time periods: ${times.join(", ")}.`;
       }
 
       return diagnosis;
@@ -726,6 +458,7 @@
       const records = Array.isArray(props.congestion_records) ? props.congestion_records : [];
       const diagnosis = buildDiagnosis(props);
       const strategies = pickRecommendedStrategies(props);
+
       const congestionHtml = records.length
         ? records.map(item => `
             <div class="congestion-item">
@@ -776,6 +509,133 @@
         </div>
       `;
     }
+
+    function buildMergedGeoJSON(congestionGeoJSON, landuseGeoJSON) {
+      const landuseById = new Map();
+      const congestionById = new Map();
+
+      for (const feature of landuseGeoJSON.features || []) {
+        const props = feature.properties || {};
+        const id = String(props.id);
+        if (!id) continue;
+
+        landuseById.set(id, {
+          cluster_30min: props.cluster_30min,
+          cluster_name: CLUSTER_NAME_MAP[props.cluster_30min] || `Cluster ${props.cluster_30min}`,
+          dominant_lu: props.dominant_lu || "N/A",
+          geometry: feature.geometry
+        });
+      }
+
+      for (const feature of congestionGeoJSON.features || []) {
+        const props = feature.properties || {};
+        const id = String(props.id);
+        if (!id) continue;
+
+        if (!congestionById.has(id)) congestionById.set(id, []);
+        congestionById.get(id).push({
+          time_3hour_str: props.time_3hour_str || "Unknown",
+          congestion_type: props.congestion_type || "Unknown",
+          day_type: props.day_type || "Unknown"
+        });
+      }
+
+      const mergedFeatures = [];
+
+      for (const [id, landuseInfo] of landuseById.entries()) {
+        const congestionRecords = (congestionById.get(id) || []).sort(
+          (a, b) => toMinutes(a.time_3hour_str) - toMinutes(b.time_3hour_str)
+        );
+
+        mergedFeatures.push({
+          type: "Feature",
+          geometry: landuseInfo.geometry,
+          properties: {
+            id,
+            cluster_30min: landuseInfo.cluster_30min,
+            cluster_name: landuseInfo.cluster_name,
+            dominant_lu: landuseInfo.dominant_lu,
+            congestion_records: congestionRecords
+          }
+        });
+      }
+
+      return {
+        type: "FeatureCollection",
+        features: mergedFeatures
+      };
+    }
+
+    function getFeatureStyle(feature) {
+      const clusterCode = feature.properties.cluster_30min;
+      return {
+        color: "#666",
+        weight: 0.6,
+        fillColor: CLUSTER_COLOR_MAP[clusterCode] || "#bdbdbd",
+        fillOpacity: 0.72
+      };
+    }
+
+    async function loadData() {
+      try {
+        const [congestionRes, landuseRes] = await Promise.all([
+          fetch(FILES.congestion),
+          fetch(FILES.landuse)
+        ]);
+
+        if (!congestionRes.ok) {
+          throw new Error(`Failed to load ${FILES.congestion}`);
+        }
+        if (!landuseRes.ok) {
+          throw new Error(`Failed to load ${FILES.landuse}`);
+        }
+
+        const congestionGeoJSON = await congestionRes.json();
+        const landuseGeoJSON = await landuseRes.json();
+        const mergedGeoJSON = buildMergedGeoJSON(congestionGeoJSON, landuseGeoJSON);
+
+        if (geoJsonLayer) {
+          map.removeLayer(geoJsonLayer);
+        }
+
+        geoJsonLayer = L.geoJSON(mergedGeoJSON, {
+          style: getFeatureStyle,
+          onEachFeature: (feature, layer) => {
+            const props = feature.properties;
+            layer.bindTooltip(
+              `ID: ${escapeHtml(props.id)}<br>${escapeHtml(props.cluster_name)}<br>${escapeHtml(normalizeLanduseName(props.dominant_lu))}`
+            );
+
+            layer.on({
+              click: () => renderDetails(props),
+              mouseover: (e) => {
+                e.target.setStyle({ weight: 1.5, color: "#111", fillOpacity: 0.9 });
+                e.target.bringToFront();
+              },
+              mouseout: (e) => {
+                geoJsonLayer.resetStyle(e.target);
+              }
+            });
+          }
+        }).addTo(map);
+
+        const bounds = geoJsonLayer.getBounds();
+        if (bounds.isValid()) {
+          map.fitBounds(bounds.pad(0.03));
+        }
+
+        setStatus(`Loaded ${mergedGeoJSON.features.length} grids.`);
+      } catch (error) {
+        console.error(error);
+        setStatus(
+          `${error.message}. Make sure the two GeoJSON files are in the same GitHub folder as this HTML file.`,
+          true
+        );
+      }
+    }
+
+    renderLegend();
+    loadData();
   </script>
 </body>
 </html>
