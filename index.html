@@ -283,7 +283,9 @@
       const congestionHtml = records.length
         ? records.map(item => `
             <div class="congestion-item">
-              <div class="label">Time Period</div>
+              <div class="label">Day Type</div>
+              <div class="value">${escapeHtml(item.day_type || "Unknown")}</div>
+              <div class="label" style="margin-top:10px;">Time Period</div>
               <div class="value">${escapeHtml(item.time_3hour_str || "Unknown")}</div>
               <div class="label" style="margin-top:10px;">Congestion Type</div>
               <div class="value small">${escapeHtml(item.congestion_type || "Unknown")}</div>
@@ -335,7 +337,9 @@
         if (!congestionById.has(id)) congestionById.set(id, []);
         congestionById.get(id).push({
           time_3hour_str: props.time_3hour_str || "Unknown",
-          congestion_type: props.congestion_type || "Unknown"
+          congestion_type: props.congestion_type || "Unknown",
+          day_type: props.day_type || "Unknown",
+          day_type: props.day_type || "Unknown"
         });
       }
 
@@ -435,6 +439,343 @@
 
     renderLegend();
     loadData();
+      const STRATEGY_LIBRARY = {
+      bus_metro_operation: {
+        family_name: "Bus / Metro Operation",
+        items: [
+          "Increase service frequency",
+          "Bus priority infrastructure",
+          "Dynamic bus/metro dispatch",
+          "Bus–Metro coordination"
+        ]
+      },
+      walkability_station_access: {
+        family_name: "Walkability and Station Access",
+        items: [
+          "Pedestrian street improvement",
+          "Safe street crossings",
+          "Station-area pedestrian design",
+          "Accessibility improvements"
+        ]
+      },
+      first_last_mile: {
+        family_name: "First / Last Mile Connection",
+        items: [
+          "Shared electric motorcycles",
+          "Micro-mobility hubs",
+          "Electrification of mobility",
+          "Integrated mobility systems"
+        ]
+      },
+      traffic_management: {
+        family_name: "Traffic Management",
+        items: [
+          "One-way street systems",
+          "Motorcycle lane organization",
+          "Intersection management",
+          "Real-time monitoring & control"
+        ]
+      }
+    };
+
+    function summarizeCongestion(records) {
+      const summary = {
+        reasons: new Set(),
+        peakTimes: [],
+        allTimes: [],
+        dayTypes: new Set()
+      };
+
+      records.forEach(record => {
+        const reason = record.congestion_type || "Unknown";
+        const time = record.time_3hour_str || "Unknown";
+        const day = record.day_type || "Unknown";
+        summary.reasons.add(reason);
+        summary.allTimes.push(time);
+        summary.dayTypes.add(day);
+        if (["5:00", "8:00", "17:00", "20:00"].includes(time)) {
+          summary.peakTimes.push(time);
+        }
+      });
+
+      return {
+        reasons: Array.from(summary.reasons),
+        peakTimes: Array.from(new Set(summary.peakTimes)).sort((a, b) => toMinutes(a) - toMinutes(b)),
+        allTimes: Array.from(new Set(summary.allTimes)).sort((a, b) => toMinutes(a) - toMinutes(b)),
+        dayTypes: Array.from(summary.dayTypes)
+      };
+    }
+      const summary = {
+        reasons: new Set(),
+        peakTimes: [],
+        allTimes: []
+      };
+
+      records.forEach(record => {
+        const reason = record.congestion_type || "Unknown";
+        const time = record.time_3hour_str || "Unknown";
+        summary.reasons.add(reason);
+        summary.allTimes.push(time);
+        if (["5:00", "8:00", "17:00", "20:00"].includes(time)) {
+          summary.peakTimes.push(time);
+        }
+      });
+
+      return {
+        reasons: Array.from(summary.reasons),
+        peakTimes: Array.from(new Set(summary.peakTimes)).sort((a, b) => toMinutes(a) - toMinutes(b)),
+        allTimes: Array.from(new Set(summary.allTimes)).sort((a, b) => toMinutes(a) - toMinutes(b))
+      };
+    }
+
+    function scoreStrategies(props) {
+      const clusterName = props.cluster_name || "";
+      const landuse = props.dominant_lu || "";
+      const congestionRecords = props.congestion_records || [];
+      const congestionSummary = summarizeCongestion(congestionRecords);
+      const reasons = congestionSummary.reasons;
+
+      const scores = {
+        bus_metro_operation: 0,
+        walkability_station_access: 0,
+        first_last_mile: 0,
+        traffic_management: 0
+      };
+
+      if (["High-Accessibility Urban Core Areas", "Hyper-Dense Underserved Areas"].includes(clusterName)) {
+        scores.bus_metro_operation += 2;
+        scores.walkability_station_access += 1;
+      }
+      if (clusterName === "Motorcycle-Dependent Transitional Areas") {
+        scores.first_last_mile += 3;
+        scores.traffic_management += 1;
+      }
+      if (clusterName === "Walkable Low-Density Areas") {
+        scores.walkability_station_access += 1;
+      }
+
+      if (["residential", "mix_use", "public_use", "education"].includes(landuse)) {
+        scores.bus_metro_operation += 1;
+        scores.walkability_station_access += 1;
+      }
+      if (["residential", "mix_use"].includes(landuse)) {
+        scores.first_last_mile += 1;
+      }
+      if (["transportation", "infrastructure", "mix_use"].includes(landuse)) {
+        scores.traffic_management += 1;
+      }
+
+      if (reasons.includes("demand pressure")) {
+        scores.bus_metro_operation += 2;
+      }
+      if (reasons.includes("supply shortage")) {
+        scores.traffic_management += 3;
+      }
+      if (reasons.includes("severe mismatch")) {
+        scores.bus_metro_operation += 1;
+        scores.walkability_station_access += 2;
+        scores.first_last_mile += 1;
+        scores.traffic_management += 2;
+      }
+      if (reasons.includes("moderate pressure")) {
+        scores.walkability_station_access += 1;
+      }
+
+      return scores;
+    }
+
+    function buildDiagnosis(props) {
+      const clusterName = props.cluster_name || "N/A";
+      const landuseText = normalizeLanduseName(props.dominant_lu);
+      const congestionSummary = summarizeCongestion(props.congestion_records || []);
+      const reasons = congestionSummary.reasons;
+      const times = congestionSummary.allTimes;
+
+      let diagnosis = "This grid shows a relatively mild mobility condition with no strong congestion pattern recorded.";
+
+      if (clusterName === "Hyper-Dense Underserved Areas") {
+        diagnosis = `This ${landuseText.toLowerCase()}-dominant grid appears to be a high-pressure area where mobility demand likely exceeds available capacity.`;
+      } else if (clusterName === "High-Accessibility Urban Core Areas") {
+        diagnosis = `This grid functions as part of a high-access urban core, where multiple activities and flows may create operational congestion.`;
+      } else if (clusterName === "Motorcycle-Dependent Transitional Areas") {
+        diagnosis = `This grid appears to rely on transitional and motorcycle-based movement, suggesting a gap between local access needs and formal mobility provision.`;
+      } else if (clusterName === "Low-Activity Peripheral Areas") {
+        diagnosis = `This grid appears to be a lower-activity peripheral area, with relatively limited pressure compared with the urban core.`;
+      } else if (clusterName === "Walkable Low-Density Areas") {
+        diagnosis = `This grid appears to be a lower-density area with relatively better local walkability and weaker overall congestion pressure.`;
+      }
+
+      if (reasons.includes("severe mismatch")) {
+        diagnosis += " The presence of severe mismatch suggests that both demand pressure and supply limitations are occurring together.";
+      } else if (reasons.includes("supply shortage")) {
+        diagnosis += " Recorded supply shortage suggests bottlenecks, limited capacity, or inefficient traffic organization.";
+      } else if (reasons.includes("demand pressure")) {
+        diagnosis += " Demand pressure indicates that congestion is strongly linked to high travel demand in this location.";
+      }
+
+      if (times.length) {
+        diagnosis += ` Congestion has been recorded in these time periods: ${times.join(", ")}.`;
+      }
+
+      return diagnosis;
+    }
+
+    function pickRecommendedStrategies(props) {
+      const scores = scoreStrategies(props);
+      const rankedFamilies = Object.entries(scores)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 2)
+        .map(entry => entry[0]);
+
+      const recommendations = [];
+      const reasons = summarizeCongestion(props.congestion_records || []).reasons;
+      const clusterName = props.cluster_name || "";
+      const landuse = props.dominant_lu || "";
+
+      rankedFamilies.forEach(familyKey => {
+        if (familyKey === "bus_metro_operation") {
+          if (reasons.includes("demand pressure")) {
+            recommendations.push({
+              name: "Increase service frequency",
+              why: "This can absorb concentrated travel demand in periods when congestion repeatedly appears."
+            });
+          }
+          recommendations.push({
+            name: "Dynamic bus/metro dispatch",
+            why: "This helps match service levels more closely to time-varying congestion patterns."
+          });
+          if (["residential", "mix_use", "public_use", "education"].includes(landuse)) {
+            recommendations.push({
+              name: "Bus–Metro coordination",
+              why: "Better coordination can improve network efficiency in activity-intensive areas."
+            });
+          }
+        }
+
+        if (familyKey === "walkability_station_access") {
+          recommendations.push({
+            name: "Pedestrian street improvement",
+            why: "Improving walking conditions can reduce friction in local access and strengthen short-distance connectivity."
+          });
+          recommendations.push({
+            name: "Safe street crossings",
+            why: "Safer crossings are especially useful where congestion reflects access difficulty or mixed traffic pressure."
+          });
+          if (["mix_use", "public_use", "education", "residential"].includes(landuse)) {
+            recommendations.push({
+              name: "Station-area pedestrian design",
+              why: "Better station-area access can improve the usability of public transport and reduce dependence on less efficient modes."
+            });
+          }
+        }
+
+        if (familyKey === "first_last_mile") {
+          recommendations.push({
+            name: "Micro-mobility hubs",
+            why: "These can provide more structured short-distance access options in transitional areas."
+          });
+          recommendations.push({
+            name: "Integrated mobility systems",
+            why: "Integration can help connect fragmented local trips with larger public transport services."
+          });
+          if (clusterName === "Motorcycle-Dependent Transitional Areas") {
+            recommendations.push({
+              name: "Shared electric motorcycles",
+              why: "This fits areas where motorcycle dependence is already embedded in everyday travel behavior."
+            });
+          }
+        }
+
+        if (familyKey === "traffic_management") {
+          recommendations.push({
+            name: "Intersection management",
+            why: "This can address localized bottlenecks and improve operational efficiency under supply constraints."
+          });
+          recommendations.push({
+            name: "Real-time monitoring & control",
+            why: "This supports dynamic responses to recurring congestion across multiple time periods."
+          });
+          if (clusterName === "Motorcycle-Dependent Transitional Areas") {
+            recommendations.push({
+              name: "Motorcycle lane organization",
+              why: "This can reduce conflict between motorcycles and other vehicles in mixed-traffic environments."
+            });
+          }
+          if (["transportation", "infrastructure"].includes(landuse)) {
+            recommendations.push({
+              name: "One-way street systems",
+              why: "This may improve circulation efficiency where street capacity and organization are limiting factors."
+            });
+          }
+        }
+      });
+
+      const unique = [];
+      const seen = new Set();
+      recommendations.forEach(item => {
+        if (!seen.has(item.name)) {
+          seen.add(item.name);
+          unique.push(item);
+        }
+      });
+
+      return unique.slice(0, 3);
+    }
+
+    function renderDetails(props) {
+      const records = Array.isArray(props.congestion_records) ? props.congestion_records : [];
+      const diagnosis = buildDiagnosis(props);
+      const strategies = pickRecommendedStrategies(props);
+      const congestionHtml = records.length
+        ? records.map(item => `
+            <div class="congestion-item">
+              <div class="label">Day Type</div>
+              <div class="value">${escapeHtml(item.day_type || "Unknown")}</div>
+              <div class="label" style="margin-top:10px;">Time Period</div>
+              <div class="value">${escapeHtml(item.time_3hour_str || "Unknown")}</div>
+              <div class="label" style="margin-top:10px;">Congestion Type</div>
+              <div class="value small">${escapeHtml(item.congestion_type || "Unknown")}</div>
+            </div>
+          `).join("")
+        : `<div class="status">No congestion record found for this grid.</div>`;
+
+      const strategyHtml = strategies.length
+        ? strategies.map(item => `
+            <div class="congestion-item">
+              <div class="value">${escapeHtml(item.name)}</div>
+              <div class="value small" style="margin-top:8px;">${escapeHtml(item.why)}</div>
+            </div>
+          `).join("")
+        : `<div class="status">No strategy recommendation available.</div>`;
+
+      detailsEl.innerHTML = `
+        <div class="detail-card">
+          <div class="label">Grid ID</div>
+          <div class="value">${escapeHtml(props.id || "N/A")}</div>
+        </div>
+        <div class="detail-card">
+          <div class="label">Cluster Name</div>
+          <div class="value">${escapeHtml(props.cluster_name || "N/A")}</div>
+          <div class="value small" style="margin-top:6px;">Cluster Code: ${escapeHtml(props.cluster_30min ?? "N/A")}</div>
+        </div>
+        <div class="detail-card">
+          <div class="label">Dominant Land Use</div>
+          <div class="value">${escapeHtml(normalizeLanduseName(props.dominant_lu))}</div>
+        </div>
+        <div class="detail-card">
+          <div class="label">Congestion by Time Period</div>
+          <div style="margin-top:10px;">${congestionHtml}</div>
+        </div>
+        <div class="detail-card">
+          <div class="label">Diagnosis</div>
+          <div class="value small" style="font-size:14px; color:#374151;">${escapeHtml(diagnosis)}</div>
+        </div>
+        <div class="detail-card">
+          <div class="label">Strategy Recommendation</div>
+          <div style="margin-top:10px;">${strategyHtml}</div>
+        </div>
+      `;
+    }
   </script>
 </body>
 </html>
